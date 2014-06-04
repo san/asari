@@ -158,6 +158,44 @@ class Asari
       def asari_on_error(exception)
         raise exception
       end
+      
+      # Batch insert
+      def asari_batch_insert
+        items_array = []
+        find_in_batches(:batch_size => 100) do |group|
+          group.each do |obj|
+            if self.asari_when
+              next unless asari_should_index?(obj)
+            end
+            data = {}
+            self.asari_fields.each do |field|
+              data[field] = obj.send(field) || ""
+            end
+            items_array << {:id => "#{obj.class.name.downcase}_#{obj.send(:id)}", :fields => data}
+          end
+          begin
+            self.asari_instance.add_items(items_array)
+          rescue Asari::DocumentUpdateException => e
+            self.asari_on_error(e)
+          end
+        end
+      end
+
+      # Batch insert
+      def asari_batch_delete
+        ids_array = []
+        find_in_batches(:batch_size => 1000) do |group|
+          group.each do |obj|
+            ids_array << "#{obj.class.name.downcase}_#{obj.send(:id)}"
+          end
+          begin
+            self.asari_instance.remove_items(ids_array)
+          rescue Asari::DocumentUpdateException => e
+            self.asari_on_error(e)
+          end
+        end
+      end
+      
     end
   end
 end

@@ -112,6 +112,7 @@ class Asari
   #
   def add_item(id, fields)
     return nil if self.class.mode == :sandbox
+
     query = { "type" => "add", "id" => id.to_s } #, "version" => Time.now.to_i, "lang" => "en" }
 
     # remove fields with blank values (per AWS CS documentation)
@@ -119,6 +120,22 @@ class Asari
 
     query["fields"] = fields
     doc_request(query)
+  end
+  
+  # Public: Add multiple items in a batch request.
+  # 'items' parameter must be an array of ids and fields_hashes
+  # e.g., [ {:id => id, :fields => { :name => "Party Pooper", :email => ..., ... }}, 
+  #         {:id => id, :fields => { :name => "Party Pooper", :email => ..., ... }}, ... ]
+  
+  def add_items(items)
+    return nil if self.class.mode == :sandbox
+
+    query_array = []
+    items.each do |item|
+      query_array << { "type" => "add", "id" => item[:id].to_s, "fields" => item[:fields].delete_if {|k, v| v.blank?} } 
+    end
+
+    doc_request(query_array)
   end
 
   # Public: Update an item in the index based on its document ID.
@@ -159,15 +176,23 @@ class Asari
     query = { "type" => "delete", "id" => id.to_s } #, "version" => Time.now.to_i }
     doc_request query
   end
+  
+  def remove_items(ids)
+    return nil if self.class.mode == :sandbox
+    query_array = []
+    ids.each do |id|
+      query_array << { "type" => "delete", "id" => id.to_s }
+    end
+    
+    doc_request query_array
+  end
 
   # Internal: helper method: common logic for queries against the doc endpoint.
   #
   def doc_request(query)
     endpoint = "http://doc-#{search_domain}.#{aws_region}.cloudsearch.amazonaws.com/#{api_version}/documents/batch"
 
-    options = { :body => [query].to_json, :headers => { "Content-Type" => "application/json"} }
-
-    puts [query].to_json.inspect
+    options = { :body => (query.is_a?(Array) ? query.to_json : [query].to_json), :headers => { "Content-Type" => "application/json"} }
 
     begin
       response = HTTParty.post(endpoint, options)
