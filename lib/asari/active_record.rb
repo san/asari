@@ -86,8 +86,11 @@ class Asari
         if self.asari_when
           return unless asari_should_index?(obj)
         end
-        data = self.asari_data_item(obj)
-        self.asari_instance.add_item(obj.send(:id), data)
+        data = {}
+        self.asari_fields.each do |field|
+          data[field] = obj.send(field) || ""
+        end
+        self.asari_instance.add_item("#{obj.class.name.downcase}_#{obj.send(:id)}", data)
       rescue Asari::DocumentUpdateException => e
         self.asari_on_error(e)
       end
@@ -101,27 +104,19 @@ class Asari
             return
           end
         end
-        data = self.asari_data_item(obj)
-        self.asari_instance.update_item(obj.send(:id), data)
-      rescue Asari::DocumentUpdateException => e
-        self.asari_on_error(e)
-      end
-
-      # Gather all the data to send to the CloudSearch
-      # Can be overriden by the model to adapt to special cases.
-      # Returns a hash of the data to send to the CloudSearch
-      def asari_data_item(obj)
         data = {}
         self.asari_fields.each do |field|
-          data[field] = obj.send(field) || ""
+          data[field] = obj.send(field)
         end
-        data
+        self.asari_instance.update_item("#{obj.class.name.downcase}_#{obj.send(:id)}", data)
+      rescue Asari::DocumentUpdateException => e
+        self.asari_on_error(e)
       end
 
       # Internal: method for removing a soon-to-be deleted item from the CloudSearch
       # index. Should probably only be called from asari_remove_from_index above.
       def asari_remove_item(obj)
-        self.asari_instance.remove_item(obj.send(:id))
+        self.asari_instance.remove_item("#{obj.class.name.downcase}_#{obj.send(:id)}")
       rescue Asari::DocumentUpdateException => e
         self.asari_on_error(e)
       end
@@ -131,7 +126,7 @@ class Asari
       def asari_should_index?(object)
         when_test = self.asari_when
         if when_test.is_a? Proc
-          return when_test.call(object)
+          return Proc.call(object)
         else
           return object.send(when_test)
         end
@@ -147,7 +142,8 @@ class Asari
       #   communicating with the CloudSearch server.
       def asari_find(term, options = {})
         records = self.asari_instance.search(term, options)
-        ids = records.map { |id| id.to_i }
+        class_name = self.class.name.downcase
+        ids = records.map { |id| id[/\d+/].to_i if id[/\D+/] == class_name}.compact
 
         records.replace(Array(self.where("id in (?)", ids)))
       end
